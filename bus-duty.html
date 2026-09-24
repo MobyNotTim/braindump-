@@ -112,12 +112,19 @@ th{color:var(--text2);font-size:13px;font-weight:700;background:var(--surface2)}
 
 <script>
 // buses: ["1","4","12"...]   records: [{bus, date:"YYYY-MM-DD", time:"HH:MM:SS", ts, session:"AM"|"PM"}]
+// Built-in route list, in pickup order. Used whenever the phone has no saved list.
+const DEFAULT_BUSES = ["199","706","1003","75","74","95","509","1002","115","317","348"];
 let buses = [], records = [], editing = false, undoFn = null, toastTimer;
 // Morning before noon, Afternoon after. A manual pick sticks until the auto period changes.
 let override = null; // {session, autoKey}
 
 function save(){try{localStorage.setItem("busduty",JSON.stringify({buses,records}))}catch{}}
-function load(){try{const r=JSON.parse(localStorage.getItem("busduty"));if(r){buses=r.buses||[];records=r.records||[]}}catch{}}
+function load(){
+  try{const r=JSON.parse(localStorage.getItem("busduty"));if(r){buses=r.buses||[];records=r.records||[]}}catch{}
+  // No saved list, or the same buses saved in another order: use the built-in list and its order
+  const same = buses.length === DEFAULT_BUSES.length && DEFAULT_BUSES.every(b => buses.includes(b));
+  if (!buses.length || same) buses = [...DEFAULT_BUSES];
+}
 
 const pad = n => String(n).padStart(2,"0");
 const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -194,7 +201,6 @@ function addBus(){
   if (!v) return;
   if (!buses.includes(v)) {
     buses.push(v);
-    buses.sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
     save(); render();
   }
   $("newBus").value = ""; $("newBus").focus();
