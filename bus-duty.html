@@ -39,6 +39,10 @@ body{font-family:Nunito,system-ui,sans-serif;background:var(--bg);color:var(--te
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px}
 h1{font-size:28px;font-weight:800}
 .date{color:var(--text2);font-weight:600}
+.seg{display:flex;background:var(--surface2);border-radius:var(--r-sm);padding:4px;gap:4px;margin:10px 0 8px}
+.seg button{flex:1;border:none;background:none;color:var(--text2);font-family:inherit;font-size:15px;font-weight:700;
+  padding:9px 0;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .progress{color:var(--text2);font-size:14px;margin-bottom:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
 .bus{position:relative;border:2px solid var(--border);background:var(--surface);color:var(--text);
@@ -83,6 +87,10 @@ th{color:var(--text2);font-size:13px;font-weight:700;background:var(--surface2)}
     <h1>Bus Duty</h1>
     <div class="date" id="today"></div>
   </header>
+  <div class="seg" role="tablist">
+    <button id="segAM" data-s="AM">Morning</button>
+    <button id="segPM" data-s="PM">Afternoon</button>
+  </div>
   <div class="progress" id="progress"></div>
 
   <div class="grid" id="grid"></div>
@@ -97,14 +105,16 @@ th{color:var(--text2);font-size:13px;font-weight:700;background:var(--surface2)}
     <button class="btn ghost" id="editBtn">Edit buses</button>
   </div>
 
-  <h2>Today's arrivals</h2>
+  <h2 id="logTitle">Today's arrivals</h2>
   <div id="log"></div>
 </div>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
 
 <script>
-// buses: ["1","4","12"...]   records: [{bus, date:"YYYY-MM-DD", time:"HH:MM:SS", ts}]
+// buses: ["1","4","12"...]   records: [{bus, date:"YYYY-MM-DD", time:"HH:MM:SS", ts, session:"AM"|"PM"}]
 let buses = [], records = [], editing = false, undoFn = null, toastTimer;
+// Morning before noon, Afternoon after. A manual pick sticks until the auto period changes.
+let override = null; // {session, autoKey}
 
 function save(){try{localStorage.setItem("busduty",JSON.stringify({buses,records}))}catch{}}
 function load(){try{const r=JSON.parse(localStorage.getItem("busduty"));if(r){buses=r.buses||[];records=r.records||[]}}catch{}}
@@ -113,11 +123,22 @@ const pad = n => String(n).padStart(2,"0");
 const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const timeStr = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 const niceTime = ts => new Date(ts).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
-const todayRecords = () => records.filter(r => r.date === dateKey(new Date()));
+const SESSION_NAME = {AM:"Morning", PM:"Afternoon"};
+const autoSession = d => d.getHours() < 12 ? "AM" : "PM";
+const autoKey = () => { const d = new Date(); return dateKey(d) + autoSession(d); };
+const sessionOf = r => r.session || autoSession(new Date(r.ts)); // older records have no session
+function currentSession(){
+  if (override && override.autoKey !== autoKey()) override = null;
+  return override ? override.session : autoSession(new Date());
+}
+const todayRecords = () => { const s = currentSession(); return records.filter(r => r.date === dateKey(new Date()) && sessionOf(r) === s); };
 const $ = id => document.getElementById(id);
 
 function render(){
-  const now = new Date(), today = todayRecords();
+  const now = new Date(), today = todayRecords(), session = currentSession();
+  $("segAM").classList.toggle("on", session === "AM");
+  $("segPM").classList.toggle("on", session === "PM");
+  $("logTitle").textContent = `${SESSION_NAME[session]} arrivals`;
   $("today").textContent = now.toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"});
   $("wrap").classList.toggle("editing", editing);
   $("editBtn").textContent = editing ? "Done" : "Edit buses";
@@ -147,13 +168,13 @@ function render(){
   const sorted = [...today].sort((a,b) => a.ts - b.ts);
   $("log").innerHTML = sorted.length
     ? `<table><tr><th>Bus</th><th>Arrived</th></tr>${sorted.map(r=>`<tr><td>${esc(r.bus)}</td><td>${niceTime(r.ts)}</td></tr>`).join("")}</table>`
-    : `<div class="empty">No buses yet today.</div>`;
+    : `<div class="empty">No buses yet this ${SESSION_NAME[session].toLowerCase()}.</div>`;
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function mark(bus){
   const d = new Date();
-  const rec = {bus, date: dateKey(d), time: timeStr(d), ts: d.getTime()};
+  const rec = {bus, date: dateKey(d), time: timeStr(d), ts: d.getTime(), session: currentSession()};
   records.push(rec); save(); render();
   toast(`Bus ${bus} arrived ${niceTime(rec.ts)}`, () => { records = records.filter(r => r !== rec); save(); render(); });
 }
@@ -178,6 +199,11 @@ function addBus(){
   }
   $("newBus").value = ""; $("newBus").focus();
 }
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+  const s = b.dataset.s;
+  override = s === autoSession(new Date()) ? null : {session: s, autoKey: autoKey()};
+  render();
+});
 $("addBtn").onclick = addBus;
 $("newBus").onkeydown = e => { if (e.key === "Enter") addBus(); };
 $("editBtn").onclick = () => { editing = !editing; render(); if (editing) $("newBus").focus(); };
@@ -190,20 +216,21 @@ $("exportBtn").onclick = () => {
     return {
       "Date": new Date(d.getFullYear(), d.getMonth(), d.getDate()),
       "Day": d.toLocaleDateString([], {weekday:"long"}),
+      "Session": SESSION_NAME[sessionOf(r)],
       "Bus": isNaN(r.bus) ? r.bus : Number(r.bus),
       "Arrival Time": r.time,
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows, {cellDates:true, dateNF:"yyyy-mm-dd"});
-  ws["!cols"] = [{wch:12},{wch:11},{wch:8},{wch:13}];
+  ws["!cols"] = [{wch:12},{wch:11},{wch:11},{wch:8},{wch:13}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Bus Arrivals");
   XLSX.writeFile(wb, `bus-arrivals.xlsx`);
 };
 
-// Roll the view over to a fresh day if the app is left open past midnight
-let shownDay = dateKey(new Date());
-setInterval(() => { const k = dateKey(new Date()); if (k !== shownDay) { shownDay = k; render(); } }, 60000);
+// Switch to the next round if the app is left open past noon or midnight
+let shownKey = autoKey();
+setInterval(() => { const k = autoKey(); if (k !== shownKey) { shownKey = k; render(); } }, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
 
 load();
