@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bus Duty">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f0eb">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e1c22">
+<title>Bus Duty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --r: 18px; --r-sm: 12px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --bg:#f5f0eb; --surface:#faf8f5; --surface2:#f0ece6;
+  --border:#e0d9d0; --text:#2c2620; --text2:#7a6f65; --text3:#b0a49a;
+  --accent:#7c9a7e; --accent-bg:#7c9a7e22; --accent-txt:#4a7050;
+  --danger:#b5584a;
+  --shadow:0 2px 10px rgba(80,60,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#1e1c22; --surface:#26232c; --surface2:#2e2a36;
+    --border:#38343f; --text:#ece8f0; --text2:#9e97aa; --text3:#5a5465;
+    --accent:#8bab8e; --accent-bg:#8bab8e26; --accent-txt:#a8c9ab;
+    --danger:#e08577;
+    --shadow:0 2px 12px rgba(0,0,0,.25);
+  }
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:Nunito,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;
+  padding:calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 24px)}
+.wrap{max-width:640px;margin:0 auto}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px}
+h1{font-size:28px;font-weight:800}
+.date{color:var(--text2);font-weight:600}
+.progress{color:var(--text2);font-size:14px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.bus{position:relative;border:2px solid var(--border);background:var(--surface);color:var(--text);
+  border-radius:var(--r);padding:14px 6px;min-height:84px;font-family:inherit;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;box-shadow:var(--shadow);
+  transition:transform .1s,background .2s,border-color .2s}
+.bus:active{transform:scale(.96)}
+.bus .num{font-size:26px;font-weight:800;line-height:1}
+.bus .time{font-size:13px;font-weight:700;color:var(--text3)}
+.bus.arrived{background:var(--accent-bg);border-color:var(--accent)}
+.bus.arrived .num{color:var(--accent-txt)}
+.bus.arrived .time{color:var(--accent-txt)}
+.bus .del{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;border:none;
+  background:var(--danger);color:#fff;font-size:16px;font-weight:800;line-height:26px;display:none}
+.editing .bus .del{display:block}
+.editing .bus{border-style:dashed}
+.btn{border:none;border-radius:var(--r-sm);padding:12px 16px;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.ghost{background:var(--surface2);color:var(--text)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.actions .btn{flex:1 1 140px}
+.add{display:none;gap:8px;margin-top:14px}
+.editing .add{display:flex}
+.add input{flex:1;min-width:0;border:2px solid var(--border);background:var(--surface);color:var(--text);
+  border-radius:var(--r-sm);padding:10px 12px;font-family:inherit;font-size:16px}
+h2{font-size:17px;margin:28px 0 10px}
+table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--r-sm);overflow:hidden;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+th{color:var(--text2);font-size:13px;font-weight:700;background:var(--surface2)}
+.empty{color:var(--text3);padding:14px 0}
+.hint{color:var(--text3);font-size:13px;margin-top:10px}
+.toast{position:fixed;left:50%;bottom:calc(var(--safe-bottom) + 20px);transform:translateX(-50%) translateY(80px);
+  background:var(--text);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:700;font-size:14px;
+  display:flex;gap:12px;align-items:center;transition:transform .25s;max-width:calc(100% - 32px)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast button{background:none;border:none;color:var(--accent);font:inherit;font-weight:800;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <header>
+    <h1>Bus Duty</h1>
+    <div class="date" id="today"></div>
+  </header>
+  <div class="progress" id="progress"></div>
+
+  <div class="grid" id="grid"></div>
+  <div class="add">
+    <input id="newBus" placeholder="Bus number (e.g. 12)" inputmode="text" autocomplete="off">
+    <button class="btn primary" id="addBtn">Add</button>
+  </div>
+  <div class="hint" id="hint">Tap a bus when it arrives. Tap it again to undo.</div>
+
+  <div class="actions">
+    <button class="btn primary" id="exportBtn">Download Excel</button>
+    <button class="btn ghost" id="editBtn">Edit buses</button>
+  </div>
+
+  <h2>Today's arrivals</h2>
+  <div id="log"></div>
+</div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
+
+<script>
+// buses: ["1","4","12"...]   records: [{bus, date:"YYYY-MM-DD", time:"HH:MM:SS", ts}]
+let buses = [], records = [], editing = false, undoFn = null, toastTimer;
+
+function save(){try{localStorage.setItem("busduty",JSON.stringify({buses,records}))}catch{}}
+function load(){try{const r=JSON.parse(localStorage.getItem("busduty"));if(r){buses=r.buses||[];records=r.records||[]}}catch{}}
+
+const pad = n => String(n).padStart(2,"0");
+const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const timeStr = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const niceTime = ts => new Date(ts).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+const todayRecords = () => records.filter(r => r.date === dateKey(new Date()));
+const $ = id => document.getElementById(id);
+
+function render(){
+  const now = new Date(), today = todayRecords();
+  $("today").textContent = now.toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"});
+  $("wrap").classList.toggle("editing", editing);
+  $("editBtn").textContent = editing ? "Done" : "Edit buses";
+  $("hint").textContent = editing ? "Add or remove buses. Past records are kept."
+    : buses.length ? "Tap a bus when it arrives. Tap it again to undo." : "Tap “Edit buses” to add your bus numbers.";
+  $("progress").textContent = buses.length ? `${new Set(today.map(r=>r.bus)).size} of ${buses.length} arrived` : "";
+
+  $("grid").innerHTML = "";
+  buses.forEach(b => {
+    const rec = today.find(r => r.bus === b);
+    const el = document.createElement("button");
+    el.className = "bus" + (rec ? " arrived" : "");
+    el.innerHTML = `<span class="num"></span><span class="time">${rec ? niceTime(rec.ts) : "—"}</span><span class="del" role="button" aria-label="Remove">×</span>`;
+    el.querySelector(".num").textContent = b;
+    el.onclick = e => {
+      if (editing) {
+        if (e.target.classList.contains("del") && confirm(`Remove bus ${b} from the list?`)) {
+          buses = buses.filter(x => x !== b); save(); render();
+        }
+        return;
+      }
+      rec ? unmark(rec) : mark(b);
+    };
+    $("grid").appendChild(el);
+  });
+
+  const sorted = [...today].sort((a,b) => a.ts - b.ts);
+  $("log").innerHTML = sorted.length
+    ? `<table><tr><th>Bus</th><th>Arrived</th></tr>${sorted.map(r=>`<tr><td>${esc(r.bus)}</td><td>${niceTime(r.ts)}</td></tr>`).join("")}</table>`
+    : `<div class="empty">No buses yet today.</div>`;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function mark(bus){
+  const d = new Date();
+  const rec = {bus, date: dateKey(d), time: timeStr(d), ts: d.getTime()};
+  records.push(rec); save(); render();
+  toast(`Bus ${bus} arrived ${niceTime(rec.ts)}`, () => { records = records.filter(r => r !== rec); save(); render(); });
+}
+function unmark(rec){
+  if (!confirm(`Undo arrival for bus ${rec.bus} (${niceTime(rec.ts)})?`)) return;
+  records = records.filter(r => r !== rec); save(); render();
+}
+
+function toast(msg, undo){
+  undoFn = undo; $("toastMsg").textContent = msg; $("toast").classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 4000);
+}
+$("toastUndo").onclick = () => { if (undoFn) undoFn(); undoFn = null; $("toast").classList.remove("show"); };
+
+function addBus(){
+  const v = $("newBus").value.trim();
+  if (!v) return;
+  if (!buses.includes(v)) {
+    buses.push(v);
+    buses.sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+    save(); render();
+  }
+  $("newBus").value = ""; $("newBus").focus();
+}
+$("addBtn").onclick = addBus;
+$("newBus").onkeydown = e => { if (e.key === "Enter") addBus(); };
+$("editBtn").onclick = () => { editing = !editing; render(); if (editing) $("newBus").focus(); };
+
+$("exportBtn").onclick = () => {
+  if (!records.length) { alert("No arrivals recorded yet."); return; }
+  if (typeof XLSX === "undefined") { alert("Couldn't load the Excel library. Check your internet connection."); return; }
+  const rows = [...records].sort((a,b) => a.ts - b.ts).map(r => {
+    const d = new Date(r.ts);
+    return {
+      "Date": new Date(d.getFullYear(), d.getMonth(), d.getDate()),
+      "Day": d.toLocaleDateString([], {weekday:"long"}),
+      "Bus": isNaN(r.bus) ? r.bus : Number(r.bus),
+      "Arrival Time": r.time,
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, {cellDates:true, dateNF:"yyyy-mm-dd"});
+  ws["!cols"] = [{wch:12},{wch:11},{wch:8},{wch:13}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Bus Arrivals");
+  XLSX.writeFile(wb, `bus-arrivals.xlsx`);
+};
+
+// Roll the view over to a fresh day if the app is left open past midnight
+let shownDay = dateKey(new Date());
+setInterval(() => { const k = dateKey(new Date()); if (k !== shownDay) { shownDay = k; render(); } }, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
+
+load();
+if (!buses.length) editing = true;
+render();
+</script>
+</body>
+</html>
